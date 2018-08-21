@@ -1,19 +1,21 @@
 //IAG Scale Traffic Lights - for use with 1/10 scale autonomous vehicle test track.
 // Russell Brett.
-// 20 August 2018.
+// 21 August 2018.
 //
 //With great thanks to http://blog.nyl.io/esp8266-led-arduino/
 //
 //To use the ESP board: enter http://arduino.esp8266.com/stable/package_esp8266com_index.json in Arduino->Preferences->Additional Board Manager
-//You will also need to install https://github.com/PaulStoffregen/Time for the time functions. Ref: https://playground.arduino.cc/code/time for doco
+//You will also need to install https://github.com/PaulStoffregen/Time for the time functions. 
+//Ref: https://playground.arduino.cc/code/time for associated doco
+//
 //This script makes the ESP chip a Webserver, as per this example:https://github.com/esp8266/Arduino/blob/master/libraries/ESP8266WebServer/
 
-//We have four lights: red, orange, green and bus
+//We have four lights: red, orange, green (and bus - currently unused by IAG, but left in case we need it later for pedestrian crossings or similar)
 //Eacht light can have several different states: on, off and blink
 
 //Requests to the server have to be made as follows:
 // protocal:adress:port/setlight?light=state&light=state ; for example:
-//http://10.0.0.254:85/setlight?red=on&bus=blink&green=on&bus=blink
+//http://10.0.0.254:80/setlight?red=on&bus=blink&green=on&bus=blink
 
 
 #include <ESP8266WiFi.h>
@@ -28,22 +30,23 @@
 //////////////////////////////
 
 //Hardware settings - match this, or change this to your board.
-const int pinLightRed     = 4; 
-const int pinLightOrange  = 5;
-const int pinLightGreen   = 12;
-const int pinLightBus     = 13;
+const int pinLightRed     = D2;   //Marked "D2" (or pin 16)
+const int pinLightOrange  = D3;   //Marked "D15/SCL/D3" 
+const int pinLightGreen   = D4;   //Marked "D14/SCL/D4" 
+const int pinLightBus     = D5;
+const int pinAutoSwitch   = D6; //Used to run via Web, or locally on timer.
 
 //WiFi settings - Change these three.
 const char* host     = "traffic1";//The host name will show up in your network - different one for each traffic light.
 const char* ssid     = "R_Brett_2G4"; //The WIFI network name.
-const char* password = "Insert Your Password Here"; //The WIFI network password.
+const char* password = "Rabbit3133"; //The WIFI network password.
 
 /////////////////////////////////////////////////////////
 // General use, doesn't need changing below this line  //
 /////////////////////////////////////////////////////////
 
 //Webserver settings
-const int webserverPort = 85;//Default: 80
+const int webserverPort = 80;//Default: 80
 unsigned int localPortUDP = 2390;
 
 //Interval at which lights should blink
@@ -53,12 +56,6 @@ const long blinkInterval = 1000;//Blink interval, in miliseconds
 const int localTimeOffsetHour = 10;//Hour offset from UTC time
 const int localTimeOffsetType = 1;//1=add, 0=substract
 const int timeUpdateInterval = 60;//When we should update, in minutes
-
-//We also use a clock function: its not possible to operate the lights if before or past htese values
-//Set the hour at which to enable; before this hour, lights will stay off
-const long timeStart = 8;
-//Set the hour at which to disable; after this hour, lights will stay off
-const long timeEnd = 23;
 
 ////////////////////////////////
 //STOP editing below this line//
@@ -82,6 +79,8 @@ int greenState      = LOW;
 String busValue     = "off";
 int busState        = LOW;
 
+//Dummy for local operations
+int LocalOps = 0;
 //Variables to store timing for blinking
 unsigned long previousJsonMillis = 0; 
 unsigned long previousBlinkMillisRed = 0; 
@@ -100,14 +99,54 @@ void setup(){
   Serial.begin(9600);
   delay(10);
   Serial.println("ESP8266 chip is starting, excecuting the setup function right now");
-  
+  Serial.println("Setting Output Pins... ");
   pinMode(pinLightRed, OUTPUT); 
   pinMode(pinLightOrange, OUTPUT);
   pinMode(pinLightGreen, OUTPUT);
   pinMode(pinLightBus, OUTPUT);
-  
-  startupBlink();
+  Serial.println("Setting Output Pins... ");
+  pinMode(pinAutoSwitch, INPUT);  //WIFI control, or local timed control switch.  Only looked at upon power-up!
 
+  //Serial.println("Blink LEDS to check connections");
+  startupBlink();
+  Serial.println("Reading Switch");
+  LocalOps = digitalRead(pinAutoSwitch);
+  Serial.print("Switch ");
+  Serial.print(pinAutoSwitch);
+  Serial.print(" Value is:");
+  Serial.print(LocalOps);
+  Serial.println();
+  if(LocalOps == 0) {
+    Serial.print("ESP8266 switch is in Local Operation Mode with switch value:");
+    Serial.print(LocalOps);
+    Serial.println();
+  //If in manual mode, loop forever on a red, brief yellow, green cycle
+    digitalWrite(pinLightRed, HIGH);
+    digitalWrite(pinLightOrange, LOW);
+    digitalWrite(pinLightGreen, LOW);
+    digitalWrite(pinLightBus, LOW);
+    while ( LocalOps == LocalOps) {
+      Serial.println("ESP8266 set to STOP.");
+      digitalWrite(pinLightOrange, LOW);
+      digitalWrite(pinLightRed, HIGH);
+      delay(15000);
+      Serial.println("ESP8266 set to CAUTION.");
+      digitalWrite(pinLightRed, LOW);
+      digitalWrite(pinLightOrange, HIGH);
+      delay(1500);
+      Serial.println("ESP8266 set to GO.");
+      digitalWrite(pinLightOrange, LOW);
+      digitalWrite(pinLightGreen, HIGH);
+      delay(15000);
+      Serial.println("ESP8266 set to CAUTION.");
+      digitalWrite(pinLightGreen, LOW);
+      digitalWrite(pinLightOrange, HIGH);
+      delay(1500);
+    }
+  }
+   Serial.print("ESP8266 switch is in Remote WIFI Operation Mode, with switch value:");
+   Serial.print(LocalOps);
+   Serial.println();
   //Connecting to WiFi
   Serial.print("Connecting to ");
   Serial.println(ssid);
@@ -126,6 +165,10 @@ void setup(){
   digitalWrite(pinLightGreen, HIGH);
   Serial.print("WiFi connected. Local IP is ");
   Serial.print(WiFi.localIP());
+  Serial.println();
+  Serial.print("Try: http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/setlight?red=on&orange=blink&green=on&bus=blink");
   //Serial.print(" and remote IP is ");
   //Serial.print(WiFi.remoteIP());  
   Serial.println();
@@ -412,7 +455,7 @@ void handleGetLight(){
 
 void handleNotFound(){
   Serial.println("Handeling a call to NOT FOUND");
-  String message = "You are makeing a non-existing call.\n\n";
+  String message = "You are making a non-existing call.\n\n";
   message += "URI: ";
   message += server.uri();
   message += "\nMethod: ";
@@ -433,7 +476,7 @@ void handleNotFound(){
 //Some functions to blink lights etcetera//
 ///////////////////////////////////////////
 void startupBlink(){
-  
+  Serial.println("Running Startup Blink sequence");
   digitalWrite(pinLightRed, HIGH);
   digitalWrite(pinLightOrange, HIGH);
   digitalWrite(pinLightGreen, HIGH);
