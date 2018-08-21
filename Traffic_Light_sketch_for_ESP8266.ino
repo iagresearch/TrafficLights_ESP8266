@@ -38,8 +38,8 @@ const int pinAutoSwitch   = D6; //Used to run via Web, or locally on timer.
 
 //WiFi settings - Change these three.
 const char* host     = "traffic1";//The host name will show up in your network - different one for each traffic light.
-const char* ssid     = "R_Brett_2G4"; //The WIFI network name.
-const char* password = "Rabbit3133"; //The WIFI network password.
+const char* ssid     = "YOUR NETWORK SSID"; //The WIFI network name.
+const char* password = "YOUR PASSWORD"; //The WIFI network password.
 
 /////////////////////////////////////////////////////////
 // General use, doesn't need changing below this line  //
